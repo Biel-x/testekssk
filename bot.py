@@ -125,5 +125,13 @@ def stop_attack(telegram_id, notify=True):
             if notify:
                 print(f"Ataque de {telegram_id} encerrado com sucesso.")
 
+def run_bot():
+    while True:
+        try:
+            bot.infinity_polling()
+        except Exception as e:
+            print(f"Erro no bot: {e}")
+            time.sleep(5)
+
 if __name__ == "__main__":
-    bot.infinity_polling()
+    run_bot()
